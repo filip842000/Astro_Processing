@@ -27,7 +27,7 @@ def importer(folder, extension):
    """Conversione da RAW (o DNG) in array RGB"""
    extension = extension.strip('.')
    try:
-      imported = [rawpy.imread(str(file)).postprocess(output_bps=16) for file in Path(folder).glob(f'*.{extension}')]
+      imported = [rawpy.imread(str(file)).postprocess(gamma=(2.222, 4.5), no_auto_bright=True, output_bps=16, use_camera_wb=True) for file in Path(folder).glob(f'*.{extension}')]
       print(f"✅ Caricate {len(imported)} immagini.")
       return imported
    except FileNotFoundError:
