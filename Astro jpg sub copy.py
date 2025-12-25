@@ -11,6 +11,71 @@ import gc
 import imageio.v3 as iio
 from skimage.restoration import richardson_lucy
 
+def importer_immagini(folder, extension, target_dtype='float32'):
+    """
+    Carica immagini (JPG, PNG, TIFF, DNG) normalizzando la profondità di bit.
+    Supporta: uint8, uint16, float32, float64.
+    """
+    valid_dtypes = {
+        'uint8': np.uint8,
+        'uint16': np.uint16,
+        'float32': np.float32,
+        'float64': np.float64
+    }
+    
+    if target_dtype not in valid_dtypes:
+        raise ValueError(f"Target dtype non supportato. Scegli tra: {list(valid_dtypes.keys())}")
+
+    extension = extension.strip('.')
+    imported = []
+    path_list = list(Path(folder).glob(f'*.{extension}'))
+
+    for file_path in path_list:
+        try:
+            # 1. LETTURA DIVERSIFICATA
+            if extension.lower() in ['dng', 'arw', 'nef', 'cr2']:
+                # Gestione RAW/DNG
+                with rawpy.imread(str(file_path)) as raw:
+                    # postprocess produce un array RGB. 
+                    # no_auto_bright=True mantiene i dati lineari relativi al sensore
+                    img = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=16)
+                    input_max = 65535 # Dato che forziamo output_bps=16
+            else:
+                # Gestione Formati Standard (JPG, PNG, TIFF)
+                # IMREAD_UNCHANGED è fondamentale per leggere i 16 bit se presenti
+                img = cv2.imread(str(file_path), cv2.IMREAD_UNCHANGED)
+                if img is None: continue
+                
+                # Conversione BGR -> RGB se non è in scala di grigi
+                if len(img.shape) == 3:
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                
+                # Determiniamo il fondo scala in base al tipo di dato letto
+                if img.dtype == np.uint8:
+                    input_max = 255
+                elif img.dtype == np.uint16:
+                    input_max = 65535
+                else:
+                    input_max = np.max(img) # Fallback
+
+            # 2. CONVERSIONE E RISCALATURA (SCALING)
+            # Portiamo tutto in un formato float temporaneo per non perdere precisione
+            img_float = img.astype(np.float64) / input_max
+
+            # 3. MAPPATURA SUL TARGET
+            if 'float' in target_dtype:
+                final_img = img_float.astype(valid_dtypes[target_dtype])
+            else:
+                output_max = 255 if target_dtype == 'uint8' else 65535
+                final_img = (img_float * output_max).astype(valid_dtypes[target_dtype])
+
+            imported.append(final_img)
+
+        except Exception as e:
+            print(f"❌ Errore nel caricamento di {file_path.name}: {e}")
+
+    print(f"✅ Caricate {len(imported)} immagini in formato {target_dtype}.")
+    return imported
 
 def importer_jpg(folder, extension):
    """Conversione da JPG in array RGB"""
@@ -40,11 +105,11 @@ def scale_to_8bit(image_16bit: np.ndarray) -> np.ndarray:
 
     Scala l'array uint16 (0-65535) a uint8 (0-255) per l'analisi.
     """
-    return cv2.normalize(image_16bit, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    return cv2.normalize(image_16bit, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8) # type: ignore
 
 def scale_to_16bit(image: np.ndarray) -> np.ndarray:
     """Scala l'array generico a uint16 (0-65535) per l'analisi."""
-    return cv2.normalize(image, None, 0, 65535, cv2.NORM_MINMAX).astype(np.uint16)
+    return cv2.normalize(image, None, 0, 65535, cv2.NORM_MINMAX).astype(np.uint16) # type: ignore
 
 def cropper(aligned_images, crop_factor_horizontal, crop_factor_vertical , v_pos, h_pos):
     """
@@ -186,7 +251,7 @@ def align_sift(source_rgb, target_rgb):
     target_gray = np.mean(target_rgb, axis=2).astype(np.uint8)
 
     # Inizializza SIFT e Brute-Force Matcher
-    sift = cv2.SIFT_create()
+    sift = cv2.SIFT_create() # type: ignore
     kp1, des1 = sift.detectAndCompute(source_gray, None)
     kp2, des2 = sift.detectAndCompute(target_gray, None)
     
@@ -201,8 +266,8 @@ def align_sift(source_rgb, target_rgb):
 
     # 2. Ottieni i punti di corrispondenza
     if len(good_matches) > 10: # Richiedi un numero minimo di corrispondenze
-        src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
-        dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+        src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2) # type: ignore
+        dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2) # type: ignore
 
         # 3. Calcola la matrice di omografia (trasformazione)
         H, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
@@ -280,7 +345,7 @@ def align_ecc(source_rgb: np.ndarray, target_rgb: np.ndarray, max_iter, epsilon)
         print("✅ ECC ha trovato la trasformazione.")
     except cv2.error as e:
         print(f"❌ Errore ECC (Homography): {e}. Riprova con un'altra immagine.")
-        return None
+        return None # type: ignore
 
     # 3. Applica la trasformazione a tutti e tre i canali RGB
     aligned_rgb = np.empty_like(source_rgb)
@@ -331,7 +396,7 @@ def align_subpixel_phase_correlate(target_image: np.ndarray, source_image: np.nd
     # Crea una matrice di trasformazione 2x3 per la traslazione (warp)
     # M = [[1, 0, dx], [0, 1, dy]]
     M = np.float32([[1, 0, dx],
-                    [0, 1, dy]])
+                    [0, 1, dy]]) # type: ignore
 
     # Applica la trasformazione usando l'interpolazione cubica (migliore qualità per i float)
     # dsize = (larghezza, altezza)
@@ -340,9 +405,9 @@ def align_subpixel_phase_correlate(target_image: np.ndarray, source_image: np.nd
     # Applica il warp all'immagine sorgente
     aligned_image = np.empty_like(source_image)
 
-    aligned_image = cv2.warpAffine(source_image, M, (cols, rows), 
+    aligned_image = cv2.warpAffine(source_image, M, (cols, rows),  # type: ignore
                                    flags=cv2.INTER_LANCZOS4 + cv2.WARP_INVERSE_MAP, 
-                                   borderMode=0)
+                                   borderMode=0) # type: ignore
     
     return [aligned_image, response]
 
