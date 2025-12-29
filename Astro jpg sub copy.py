@@ -11,71 +11,6 @@ import gc
 import imageio.v3 as iio
 from skimage.restoration import richardson_lucy
 
-def importer_immagini(folder, extension, target_dtype='float32'):
-    """
-    Carica immagini (JPG, PNG, TIFF, DNG) normalizzando la profondità di bit.
-    Supporta: uint8, uint16, float32, float64.
-    """
-    valid_dtypes = {
-        'uint8': np.uint8,
-        'uint16': np.uint16,
-        'float32': np.float32,
-        'float64': np.float64
-    }
-    
-    if target_dtype not in valid_dtypes:
-        raise ValueError(f"Target dtype non supportato. Scegli tra: {list(valid_dtypes.keys())}")
-
-    extension = extension.strip('.')
-    imported = []
-    path_list = list(Path(folder).glob(f'*.{extension}'))
-
-    for file_path in path_list:
-        try:
-            # 1. LETTURA DIVERSIFICATA
-            if extension.lower() in ['dng', 'arw', 'nef', 'cr2']:
-                # Gestione RAW/DNG
-                with rawpy.imread(str(file_path)) as raw:
-                    # postprocess produce un array RGB. 
-                    # no_auto_bright=True mantiene i dati lineari relativi al sensore
-                    img = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=16)
-                    input_max = 65535 # Dato che forziamo output_bps=16
-            else:
-                # Gestione Formati Standard (JPG, PNG, TIFF)
-                # IMREAD_UNCHANGED è fondamentale per leggere i 16 bit se presenti
-                img = cv2.imread(str(file_path), cv2.IMREAD_UNCHANGED)
-                if img is None: continue
-                
-                # Conversione BGR -> RGB se non è in scala di grigi
-                if len(img.shape) == 3:
-                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                
-                # Determiniamo il fondo scala in base al tipo di dato letto
-                if img.dtype == np.uint8:
-                    input_max = 255
-                elif img.dtype == np.uint16:
-                    input_max = 65535
-                else:
-                    input_max = np.max(img) # Fallback
-
-            # 2. CONVERSIONE E RISCALATURA (SCALING)
-            # Portiamo tutto in un formato float temporaneo per non perdere precisione
-            img_float = img.astype(np.float64) / input_max
-
-            # 3. MAPPATURA SUL TARGET
-            if 'float' in target_dtype:
-                final_img = img_float.astype(valid_dtypes[target_dtype])
-            else:
-                output_max = 255 if target_dtype == 'uint8' else 65535
-                final_img = (img_float * output_max).astype(valid_dtypes[target_dtype])
-
-            imported.append(final_img)
-
-        except Exception as e:
-            print(f"❌ Errore nel caricamento di {file_path.name}: {e}")
-
-    print(f"✅ Caricate {len(imported)} immagini in formato {target_dtype}.")
-    return imported
 
 def importer_jpg(folder, extension):
    """Conversione da JPG in array RGB"""
@@ -98,6 +33,38 @@ def importer(folder, extension):
    except FileNotFoundError:
       print(f"❌Problemi con l'import delle immagini")
       return []
+   
+def importer_raw(folder, extension):
+    """Conversione da RAW (o DNG) in array RGB con gestione della memoria"""
+    extension = extension.strip('.')
+    imported = []
+    
+    # Cerchiamo i file
+    files = list(Path(folder).glob(f'*.{extension}'))
+    
+    if not files:
+        print(f"❌ Nessun file trovato con estensione .{extension}")
+        return []
+
+    try:
+        for file_path in files:
+            # L'uso di 'with' garantisce che rawpy chiuda il file 
+            # e liberi la memoria interna (mempool) ad ogni ciclo
+            with rawpy.imread(str(file_path)) as raw:
+                rgb_array = raw.postprocess(
+                    gamma=(2.222, 4.5), 
+                    no_auto_bright=True, 
+                    output_bps=16, 
+                    use_camera_wb=True
+                )
+                imported.append(rgb_array)
+        
+        print(f"✅ Caricate {len(imported)} immagini.")
+        return imported
+
+    except Exception as e:
+        print(f"❌ Problemi con l'import delle immagini: {e}")
+        return []
 
 def scale_to_8bit(image_16bit: np.ndarray) -> np.ndarray:
     """
@@ -105,11 +72,11 @@ def scale_to_8bit(image_16bit: np.ndarray) -> np.ndarray:
 
     Scala l'array uint16 (0-65535) a uint8 (0-255) per l'analisi.
     """
-    return cv2.normalize(image_16bit, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8) # type: ignore
+    return cv2.normalize(image_16bit, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
 def scale_to_16bit(image: np.ndarray) -> np.ndarray:
     """Scala l'array generico a uint16 (0-65535) per l'analisi."""
-    return cv2.normalize(image, None, 0, 65535, cv2.NORM_MINMAX).astype(np.uint16) # type: ignore
+    return cv2.normalize(image, None, 0, 65535, cv2.NORM_MINMAX).astype(np.uint16)
 
 def cropper(aligned_images, crop_factor_horizontal, crop_factor_vertical , v_pos, h_pos):
     """
@@ -118,7 +85,11 @@ def cropper(aligned_images, crop_factor_horizontal, crop_factor_vertical , v_pos
 
     Args:
         aligned_images (list): Lista di array NumPy (immagini RGB o scala di grigi).
-        percentage (int/float): Percentuale (es. 75) di altezza e larghezza da conservare.
+        horizonta_factor (int/float): Percentuale (es. 75) di larghezza da conservare.
+        vertical_factor (int/float): Percentuale (es. 75) di altezza da conservare.
+        vertical_position (string): "center", "top", "bottom"
+        horizontal_position (string): "center", "left", "right"
+
 
     Returns:
         list: Lista di immagini ritagliate.
@@ -251,7 +222,7 @@ def align_sift(source_rgb, target_rgb):
     target_gray = np.mean(target_rgb, axis=2).astype(np.uint8)
 
     # Inizializza SIFT e Brute-Force Matcher
-    sift = cv2.SIFT_create() # type: ignore
+    sift = cv2.SIFT_create()
     kp1, des1 = sift.detectAndCompute(source_gray, None)
     kp2, des2 = sift.detectAndCompute(target_gray, None)
     
@@ -266,8 +237,8 @@ def align_sift(source_rgb, target_rgb):
 
     # 2. Ottieni i punti di corrispondenza
     if len(good_matches) > 10: # Richiedi un numero minimo di corrispondenze
-        src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2) # type: ignore
-        dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2) # type: ignore
+        src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+        dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
 
         # 3. Calcola la matrice di omografia (trasformazione)
         H, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
@@ -345,7 +316,7 @@ def align_ecc(source_rgb: np.ndarray, target_rgb: np.ndarray, max_iter, epsilon)
         print("✅ ECC ha trovato la trasformazione.")
     except cv2.error as e:
         print(f"❌ Errore ECC (Homography): {e}. Riprova con un'altra immagine.")
-        return None # type: ignore
+        return None
 
     # 3. Applica la trasformazione a tutti e tre i canali RGB
     aligned_rgb = np.empty_like(source_rgb)
@@ -396,7 +367,7 @@ def align_subpixel_phase_correlate(target_image: np.ndarray, source_image: np.nd
     # Crea una matrice di trasformazione 2x3 per la traslazione (warp)
     # M = [[1, 0, dx], [0, 1, dy]]
     M = np.float32([[1, 0, dx],
-                    [0, 1, dy]]) # type: ignore
+                    [0, 1, dy]])
 
     # Applica la trasformazione usando l'interpolazione cubica (migliore qualità per i float)
     # dsize = (larghezza, altezza)
@@ -405,9 +376,9 @@ def align_subpixel_phase_correlate(target_image: np.ndarray, source_image: np.nd
     # Applica il warp all'immagine sorgente
     aligned_image = np.empty_like(source_image)
 
-    aligned_image = cv2.warpAffine(source_image, M, (cols, rows),  # type: ignore
+    aligned_image = cv2.warpAffine(source_image, M, (cols, rows), 
                                    flags=cv2.INTER_LANCZOS4 + cv2.WARP_INVERSE_MAP, 
-                                   borderMode=0) # type: ignore
+                                   borderMode=0)
     
     return [aligned_image, response]
 
@@ -504,8 +475,9 @@ output_file_phase = "./stacked_image_ecc_phase.tiff"
 output_file_ecc = "./stacked_image_ecc_ecc.tiff"
 output_file_o_phase = "./stacked_image_ecc_o-phase.tiff"
     # 1) Importa le immagini
-imported = importer(folder, extension)
-imported = cropper(imported, 0.70, 0.40, "top", "center")
+imported = importer_raw(folder, extension)
+imported = cropper(imported, 0.50, 0.50, "center", "center")
+imported = cropper(imported, 0.80, 0.80, "bottom", "right")
     # 3) Riscalamento (opzionale, ma utile per migliorare l'allineamento)
 resolution = np.shape(imported[0])
 resolution = (resolution[0]*1, resolution[1]*1)
@@ -520,17 +492,15 @@ gc.collect()
 aligned_sift = normalized
 del normalized
 gc.collect()
-aligned = [align_ecc(image, aligned_sift[0], 10000, 1e-4 ) for image in aligned_sift]
+aligned = [align_ecc(image, aligned_sift[0], 1000, 1e-10) for image in aligned_sift]
 del aligned_sift
 gc.collect()
     # 5) Ritaglio (opzionale, ma utile per eliminare i bordi neri)
-aligned = cropper(aligned, 0.90, 0.90, "center", "center")
+aligned = cropper(aligned, 0.95, 0.95, "center", "center")
 aligned_ecc = [img for img in aligned if img is not None]
 resolution = np.shape(aligned[0])
 resolution = (resolution[0]*1, resolution[1]*1)
 aligned_ecc = [rescaler(image, resolution[0], resolution[1]) for image in aligned_ecc]
-stacked_ecc = stacker(aligned)
-tiff_saver(stacked_ecc, output_file_ecc)
     # 6) Allineamento subpixel
 phase_aligned, weights = zip(*[align_subpixel_phase_correlate(image, aligned[0]) for image in aligned])
     # 6) Ritaglio (opzionale, ma utile per eliminare i bordi neri)
@@ -554,13 +524,23 @@ del filtered
 gc.collect()
     # 9) Stacking (somma o mediana)
 stacked_tot = weighter_stacker(final_array, final_scores)
-stacked_lap = weighter_stacker(final_array, laplacian_scores)
-stacked_phase = weighter_stacker(final_array, weights)
+tiff_saver(stacked_tot, output_file_tot)
+
 stacked = apply_richardson_lucy(scale_to_16bit(stacked_tot).astype(np.float32)/65535, psf_sigma=1.5, num_iterations=25)
 stacked = scale_to_16bit(stacked)
-    # 10) Salvataggio dell'immagine finale
-tiff_saver(stacked_tot, output_file_tot)
 tiff_saver(stacked, output_file)
+
+stacked_lap = weighter_stacker(final_array, laplacian_scores)
+stacked_lap = apply_richardson_lucy(scale_to_16bit(stacked_lap).astype(np.float32)/65535, psf_sigma=1.5, num_iterations=25)
+stacked_lap = scale_to_16bit(stacked_lap)
 tiff_saver(stacked_lap, output_file_lap)
+
+stacked_phase = weighter_stacker(final_array, weights)
+stacked_tot = apply_richardson_lucy(scale_to_16bit(stacked_phase).astype(np.float32)/65535, psf_sigma=1.5, num_iterations=25)
+stacked_tot = scale_to_16bit(stacked_tot)
 tiff_saver(stacked_phase, output_file_phase)
+
+    # 10) Salvataggio dell'immagine finale
+
+
 plotter(stacked)

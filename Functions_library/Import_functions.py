@@ -23,8 +23,18 @@ from skimage.restoration import richardson_lucy
 ### Import delle immagini raw e standard con normalizzazione della profondità di bit
 def general2bgr(file_path: str, target_dtype: str) -> np.ndarray:
     """
+    # Summary
     Carica un singolo file immagine, ne rileva la profondità di bit originale
     e lo converte nel formato target normalizzando rispetto al fondo scala.
+    ## Inputs
+    - file_path: Percorso completo del file immagine da caricare.
+    - target_dtype: Tipo di dato di destinazione. Opzioni valide: 'uint8', 'uint16', 'float32', 'float64'.
+    ## Outputs
+    - img_converted: Immagine convertita nel formato target con normalizzazione del fondo scala.
+    ## Note
+    - Supporta formati RAW (.dng, .raw, .arw, .nef, .cr2) e formati standard (.jpg, .jpeg, .tiff, .tif, .png, .bmp).
+    - Rileva automaticamente la profondità di bit originale dell'immagine.
+    - Normalizza l'immagine rispetto al fondo scala originale.
     """
     path = Path(file_path)
     if not path.exists():
@@ -46,12 +56,14 @@ def general2bgr(file_path: str, target_dtype: str) -> np.ndarray:
     # --- 1. LETTURA E DETERMINAZIONE FONDO SCALA ORIGINALE ---
     if ext in raw_extensions:
         with rawpy.imread(str(path)) as raw:
-            # raw.raw_bitdepth ci dice se il sensore è a 10, 12, 14 o 16 bit
-            input_max = (2 ** raw.raw_bitdepth) - 1
-            
+
             # Post-elaborazione: forziamo 16-bit per non perdere precisione durante lo sviluppo
             # no_auto_bright=True evita che il software "stiri" l'istogramma
-            img = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=16)
+            img = raw.postprocess( use_camera_wb  = True  ,
+                                   no_auto_bright = True  ,
+                                   output_bps     = 16    ,
+                                   no_auto_scale  = False ,
+                                   user_equal     = 11    )
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             # Dopo il postprocess a 16 bit, il valore massimo effettivo diventa 65535
             # ma i dati sono scalati proporzionalmente al raw_bitdepth originale.
@@ -86,11 +98,52 @@ def general2bgr(file_path: str, target_dtype: str) -> np.ndarray:
         # Per uint8 e uint16, riscaliamo al nuovo fondo scala e arrotondiamo
         return np.clip(img_normalized * target_max, 0, target_max).astype(target_np_type)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###########################################################################################
+# FUNZIONI DA RIVEDERE E ADATTARE SUCCESSIVAMENTE AL NUOVO METODO GENERAL2BGR #
+###########################################################################################
+
 def jpg(folder, extension):
-   """Conversione da JPG in array RGB"""
+   """Conversione da JPG in array BGR a 16 bit"""
    extension = extension.strip('.')
    try:
-      imported = [cv2.cvtColor(cv2.imread(str(file), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB).astype(np.uint16)*257 for file in Path(folder).glob(f'*.{extension}')]
+      imported = []
+      for file in Path(folder).glob(f'*.{extension}'):
+            img = cv2.imread(str(file), cv2.IMREAD_COLOR).astype(np.uint16)*257
+            imported.append(img)
+            print(f"✅ Caricata immagine {file}.")
       print(f"✅ Caricate {len(imported)} immagini.")
       return imported
    except FileNotFoundError:
