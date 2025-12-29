@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.fits
+*.fit
+*.raw
+*.dng
+*.tif
+*.tiff
+*.jpg
+*.png
