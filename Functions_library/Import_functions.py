@@ -16,9 +16,7 @@ from PIL import Image
 import gc
 import imageio.v3 as iio
 from skimage.restoration import richardson_lucy
-
-# Cross references to other function libraries
-# import Conversion_functions as Conversions
+from rawpy import DemosaicAlgorithm # type: ignore
 
 ### Import delle immagini raw e standard con normalizzazione della profondità di bit
 def general2bgr(file_path: str, target_dtype: str) -> np.ndarray:
@@ -56,18 +54,20 @@ def general2bgr(file_path: str, target_dtype: str) -> np.ndarray:
     # --- 1. LETTURA E DETERMINAZIONE FONDO SCALA ORIGINALE ---
     if ext in raw_extensions:
         with rawpy.imread(str(path)) as raw:
-
+            # Usiamo RCD o LMMSE per la massima qualità astronomica
+            # demosaic_algorithm=rawpy.DemosaicAlgorithm.RCD  # Prova RCD
+            # demosaic_algorithm=rawpy.DemosaicAlgorithm.LMMSE # Alternativa ottima
             # Post-elaborazione: forziamo 16-bit per non perdere precisione durante lo sviluppo
             # no_auto_bright=True evita che il software "stiri" l'istogramma
-            img = raw.postprocess( use_camera_wb  = True  ,
-                                   no_auto_bright = True  ,
-                                   output_bps     = 16    ,
-                                   no_auto_scale  = False ,
-                                   user_equal     = 11    )
+            img = raw.postprocess( demosaic_algorithm = DemosaicAlgorithm.LMMSE,
+                                   use_camera_wb      = False   ,
+                                   no_auto_bright     = True    ,
+                                   output_bps         = 16      ,
+                                   no_auto_scale      = True    ,
+                                   user_flip          = 0       )
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            # Dopo il postprocess a 16 bit, il valore massimo effettivo diventa 65535
-            # ma i dati sono scalati proporzionalmente al raw_bitdepth originale.
-            current_max = 65535
+            # Il valore massimo dei dati RAW dipende dal sensore (es. 12, 14 o 16 bit)
+            current_max = raw.white_level
 
     elif ext in standard_extensions:
         # Formati standard (JPG, TIFF, PNG, BMP)
