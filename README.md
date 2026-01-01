@@ -7,3 +7,6 @@ The Idea is simply to take lots of pictures, align them together and compute a s
 
 The folder structure is as follows:
 
+
+. * Devo ancora finire di scrivere 🔥 *
+
