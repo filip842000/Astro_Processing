@@ -19,7 +19,7 @@ from skimage.restoration import richardson_lucy
 from typing import Any, cast
 
 ### Allineamento di un'immagine di input rispetto ad una di riferimento usando SIFT e RANSAC
-def align_sift(target_g: np.ndarray, source_g: np.ndarray) -> tuple[np.ndarray, bool]:
+def sift(target_g: np.ndarray, source_g: np.ndarray) -> tuple[np.ndarray, bool]:
     """
     Calcola la matrice di trasformazione Omografica 3x3 tra due immagini.
     
@@ -74,7 +74,7 @@ def align_sift(target_g: np.ndarray, source_g: np.ndarray) -> tuple[np.ndarray, 
         return np.eye(3, dtype=np.float64), False
     
 ### Allineamento di un'immagine di input rispetto ad una di riferimento usando ECC
-def align_ecc(target_g: np.ndarray, source_g: np.ndarray, M_init: np.ndarray, max_iterations: int, precision: float) -> tuple[np.ndarray, bool]:
+def ecc(target_g: np.ndarray, source_g: np.ndarray, M_init: np.ndarray, max_iterations: int, precision: float) -> tuple[np.ndarray, bool]:
     """
     Rifinisce l'allineamento usando l'algoritmo ECC (Enhanced Correlation Coefficient).
     
