@@ -12,11 +12,11 @@ The folder structure is as follows:
 
 
 # To Do:
-[] Aggiornare Diagramma
-[] Finire mastercode
-[] Implementare Drizzle
-[] Predisposizione Calibrazione
-[] Ordina processo per convergere dalla reference
-[] Rating nitidezza
-[] Rating rumore
-[] Rating lucky imaging
+* Aggiornare Diagramma
+* Finire mastercode
+* Implementare Drizzle
+* Predisposizione Calibrazione
+* Ordina processo per convergere dalla reference
+* Rating nitidezza
+* Rating rumore
+* Rating lucky imaging
