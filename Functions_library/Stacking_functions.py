@@ -52,7 +52,7 @@ class SingleChannelStacker:
         return final_channel
     
 class DrizzleStacker:
-    def __init__(self, ref_h, ref_w, upscale_factor=3):
+    def __init__(self, ref_h: int, ref_w: int, upscale_factor: int):
         """
         Inizializza gli accumulatori per lo stacking.
         """
@@ -61,11 +61,11 @@ class DrizzleStacker:
         
         # Accumulatore Immagine (3 canali BGR)
         # Un'immagine 6000x4000 float32 occupa circa 288MB
-        self.accum_image = np.zeros((self.new_h, self.new_w, 3), dtype=np.float32)
+        self.pixels = np.zeros((self.new_h, self.new_w, 3), dtype=np.float32)
         
         # Accumulatore Pesi (1 canale)
         # Occupa circa 96MB
-        self.accum_weights = np.zeros((self.new_h, self.new_w), dtype=np.float32)
+        self.weights = np.zeros((self.new_h, self.new_w, 3), dtype=np.float32)
 
     def add_frame(self, drizzled_img, weight_map):
         """
@@ -76,6 +76,14 @@ class DrizzleStacker:
         
         # Somma pixelwise dei pesi
         self.accum_weights += weight_map
+    
+    def add_channel_data(self, drizzled_data, weight_map, channel_idx):
+        """
+        Aggiunge i dati di un singolo canale alla 'tela' principale.
+        channel_idx: 0 per Blu, 1 per Verde, 2 per Rosso (standard OpenCV)
+        """
+        self.accum_image[:, :, channel_idx] += drizzled_data
+        self.accum_weights[:, :, channel_idx] += weight_map
 
     def get_final_image(self):
         """

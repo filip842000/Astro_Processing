@@ -75,13 +75,12 @@ gc.collect()
 channel = {'B': 0, 'G': 1, 'R': 2}
 M = [np.eye(3), np.eye(3), np.eye(3)]  # Matrice di trasformazione identità come default
 M_earth = np.eye(3)  # Matrice di trasformazione identità per la correzione della rotazione terrestre
-pixel_frame =  [] # Immagine di base per il drizzle
-weights_frame = [] # Mappa dei pesi per il drizzle
+stack =  Stacking.DrizzleStacker(reference.shape[0], reference.shape[1], upscale_factor) # Immagine di base per il drizzle
 
 ### Ciclo di elaborazione delle immagini
 for idx, image in enumerate(images_paths):
     print(f"\n🔄 Elaborazione immagine {idx + 1} di {len(images_paths)}: {image}")
-    print(f"Avamzamento: |{'█' * (idx + 1)}{' ' * (len(images_paths) - idx - 1)}| - {((idx + 1) / len(images_paths)) * 100:.2f}%")
+    print(f"Avanzamento: |{'█' * (idx + 1)}{' ' * (len(images_paths) - idx - 1)}| - {((idx + 1) / len(images_paths)) * 100:.2f}%")
     try:
         # Import dell'immagine
         bgr = Import.general2bgr(str(image), processing_format)
@@ -91,9 +90,17 @@ for idx, image in enumerate(images_paths):
     except Exception as e:
         print(f"❌ Errore nel caricamento dell'immagine {image}: {e}")
         continue
-    M_prev = M
+    M_prev = np.matmul(M_prev, M[0])
     projected_M = np.matmul(M_earth, M[0])  # Composizione delle trasformazioni
     # Allineamento dell'immagine
-    M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[channel['G']], projected_M, max_alignment_iterations, alignment_precision)
-    if not ecc_success:
-        print(f"⚠️ Allineamento ECC fallito per l'immagine {image}: Tentativo con SIFT.")
+    try:
+        M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[channel['G']], projected_M, max_alignment_iterations, alignment_precision)
+        if not ecc_success:
+            print(f"⚠️ Allineamento ECC fallito per l'immagine {image}: Tentativo con SIFT.")
+            M[channel['G']], sift_success = Alignment.sift(reference, bgr[channel['G']])
+            M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[channel['G']], M[channel['G']], max_alignment_iterations, alignment_precision)
+        M[channel['R']], _ = Alignment.ecc(reference, bgr[channel['R']], M[channel['G']], max_alignment_iterations, alignment_precision)
+        M[channel['B']], _ = Alignment.ecc(reference, bgr[channel['B']], M[channel['G']], max_alignment_iterations, alignment_precision)
+    except Exception as e:
+        print(f"❌ Errore nell'allineamento {image}: {e}")
+        print("Suggerimento: controlla il formato di input, forse è da cambiare")
