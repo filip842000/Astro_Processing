@@ -12,6 +12,7 @@ import gc
 import imageio.v3 as iio
 from skimage.restoration import richardson_lucy
 from rawpy import DemosaicAlgorithm # type: ignore
+from scipy.linalg import logm, expm
 
 import Functions_library.Import_functions as Import
 import Functions_library.Conversion_functions as Conversion
@@ -75,6 +76,9 @@ gc.collect()
 channel = {'B': 0, 'G': 1, 'R': 2}
 M = [np.eye(3), np.eye(3), np.eye(3)]  # Matrice di trasformazione identità come default
 M_earth = np.eye(3)  # Matrice di trasformazione identità per la correzione della rotazione terrestre
+M_prev = np.eye(3)
+earth_accumulator = np.zeros((3, 3), dtype=np.float32)
+earth_counter = 0
 stack =  Stacking.DrizzleStacker(reference.shape[0], reference.shape[1], upscale_factor) # Immagine di base per il drizzle
 
 ### Ciclo di elaborazione delle immagini
@@ -90,11 +94,17 @@ for idx, image in enumerate(images_paths):
     except Exception as e:
         print(f"❌ Errore nel caricamento dell'immagine {image}: {e}")
         continue
-    M_prev = np.matmul(M_prev, M[0])
-    projected_M = np.matmul(M_earth, M[0])  # Composizione delle trasformazioni
+    M_prev_inv = np.linalg.inv(M_prev)
+    M_delta = np.matmul(M_prev_inv, M[channel['G']]) #Calcolo il delta prima di aggiornare M_prev
+    if idx > 1:
+        earth_accumulator += logm(M_delta)
+        earth_counter += 1
+    M_earth = expm(earth_accumulator / earth_counter) # type: ignore
+    M_prev = M[channel['G']] #Aggiorno M_prev
+    M[channel['G']] = np.matmul(M_earth, M[channel['G']])  # Composizione delle trasformazioni
     # Allineamento dell'immagine
     try:
-        M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[channel['G']], projected_M, max_alignment_iterations, alignment_precision)
+        M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[channel['G']], M[channel['G']], max_alignment_iterations, alignment_precision)
         if not ecc_success:
             print(f"⚠️ Allineamento ECC fallito per l'immagine {image}: Tentativo con SIFT.")
             M[channel['G']], sift_success = Alignment.sift(reference, bgr[channel['G']])
@@ -104,3 +114,4 @@ for idx, image in enumerate(images_paths):
     except Exception as e:
         print(f"❌ Errore nell'allineamento {image}: {e}")
         print("Suggerimento: controlla il formato di input, forse è da cambiare")
+    # Drizzle

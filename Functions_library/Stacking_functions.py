@@ -102,7 +102,7 @@ class DrizzleStacker:
             
         return final_img
 
-def drizzle_core(img, M, upscale_factor=3, pixfrac=1.0):
+def drizzle_core(img, M, upscale_factor, pixfrac):
     """
     Esegue il Drizzle raffinato con gestione del PixFrac tramite mappatura inversa.
     
@@ -162,7 +162,7 @@ def drizzle_core(img, M, upscale_factor=3, pixfrac=1.0):
     
     return drizzled_img, weight_map
 
-def apply_drizzle_step(img, M, upscale_factor=3, pixfrac=1.0):
+def apply_simple_drizzle(img, M, upscale_factor):
     """
     Esegue un passo di Drizzle su un singolo frame.
     
@@ -188,16 +188,6 @@ def apply_drizzle_step(img, M, upscale_factor=3, pixfrac=1.0):
     
     # Matrice finale: sposta e poi ingrandisce
     M_drizzle = np.matmul(S, M)
-    
-    # 2. Logica del PixFrac
-    # Se pixfrac < 1.0, il drop è più piccolo del pixel di output. 
-    # Per simulare questo con le funzioni di OpenCV:
-    # Applichiamo un leggero restringimento (shrink) locale se pixfrac < 1.0
-    if pixfrac < 1.0:
-        # Questo è un approccio avanzato: ridimensioniamo l'immagine sorgente 
-        # mantenendo i centroidi, per simulare drop più piccoli.
-        # Per ora, con pixfrac=1.0, saltiamo questo calcolo pesante.
-        pass
 
     # 3. Trasformazione Geometrica
     # Usiamo INTER_NEAREST per non 'sfumare' il dato originale durante lo spostamento.
@@ -214,7 +204,6 @@ def apply_drizzle_step(img, M, upscale_factor=3, pixfrac=1.0):
     # La mappa dei pesi deve avere lo stesso valore del pixfrac 
     # (o 1.0 se il pixel è presente) per pesare correttamente lo stacking finale.
     # Creiamo una maschera booleana (dove c'è segnale) e la trasformiamo in pesi.
-    mask = (np.any(drizzled_frame > 0, axis=2)).astype(np.float32)
-    weight_map = mask * pixfrac
+    weight_map = (np.any(drizzled_frame > 0, axis=2)).astype(np.float32)
     
     return drizzled_frame, weight_map
