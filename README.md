@@ -10,3 +10,13 @@ The folder structure is as follows:
 
 . * Devo ancora finire di scrivere 🔥 *
 
+
+# To Do:
+* Aggiornare Diagramma
+* Finire mastercode
+* Implementare Drizzle
+* Predisposizione Calibrazione
+* Ordina processo per convergere dalla reference
+* Rating nitidezza
+* Rating rumore
+* Rating lucky imaging
