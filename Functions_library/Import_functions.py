@@ -17,6 +17,7 @@ import gc
 import imageio.v3 as iio
 from skimage.restoration import richardson_lucy
 from rawpy import DemosaicAlgorithm # type: ignore
+import tifffile
 
 ### Import delle immagini raw e standard con normalizzazione della profondità di bit
 def general2bgr(file_path: str, target_dtype: str) -> np.ndarray:
@@ -97,6 +98,25 @@ def general2bgr(file_path: str, target_dtype: str) -> np.ndarray:
     else:
         # Per uint8 e uint16, riscaliamo al nuovo fondo scala e arrotondiamo
         return np.clip(img_normalized * target_max, 0, target_max).astype(target_np_type)
+    
+def dng_export(image: np.ndarray, output_path: str):
+    """
+    ## Funzione ausiliaria
+
+    Esporta un'immagine in formato DNG a 16 bit utilizzando rawpy.
+    """
+    try:
+        rgb = image[:, :, ::-1].astype(np.float32)  # Converti BGR a RGB
+
+        tifffile.imwrite(output_path,
+                         rgb,
+                         photometric='rgb',
+                         planarconfig='contig',
+                         metadata={'axes': 'YXC'})
+        
+        print(f"✅ Immagine esportata come DNG in {output_path}.")
+    except Exception as e:
+        print(f"❌ Errore durante l'esportazione in DNG: {e}")
 
 
 

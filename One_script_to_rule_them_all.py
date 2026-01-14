@@ -43,10 +43,10 @@ crop_right_pc = 10.0  # Percentuale da ritagliare da destra
 max_alignment_iterations = 5000
 alignment_precision = 1e-7
 # Drizzle parameters
-upscale_factor = 3
+upscale_factor = 2
 drizzle_pixel_fraction = 0.8
 # Stacking parameters
-use_richardson_lucy = True
+use_richardson_lucy = False
 rl_iterations = 30
 # Optional: Imposta 'True' per non salvare le immagini intermedie e ottenre solo il risultato finale
 life_in_the_fast_lane = True
@@ -104,14 +104,35 @@ for idx, image in enumerate(images_paths):
     M[channel['G']] = np.matmul(M_earth, M[channel['G']])  # Composizione delle trasformazioni
     # Allineamento dell'immagine
     try:
-        M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[channel['G']], M[channel['G']], max_alignment_iterations, alignment_precision)
+        M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[:, :, channel['G']], M[channel['G']], max_alignment_iterations, alignment_precision)
         if not ecc_success:
             print(f"⚠️ Allineamento ECC fallito per l'immagine {image}: Tentativo con SIFT.")
-            M[channel['G']], sift_success = Alignment.sift(reference, bgr[channel['G']])
-            M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[channel['G']], M[channel['G']], max_alignment_iterations, alignment_precision)
-        M[channel['R']], _ = Alignment.ecc(reference, bgr[channel['R']], M[channel['G']], max_alignment_iterations, alignment_precision)
+            M[channel['G']], sift_success = Alignment.sift(reference, bgr[:, :, channel['G']])
+            M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[:, :, channel['G']], M[channel['G']], max_alignment_iterations, alignment_precision)
+        M[channel['R']], _ = Alignment.ecc(reference, bgr[:, :, channel['R']], M[channel['G']], max_alignment_iterations, alignment_precision)
         M[channel['B']], _ = Alignment.ecc(reference, bgr[channel['B']], M[channel['G']], max_alignment_iterations, alignment_precision)
     except Exception as e:
         print(f"❌ Errore nell'allineamento {image}: {e}")
         print("Suggerimento: controlla il formato di input, forse è da cambiare")
     # Drizzle
+    stack.add_channel_data(*Stacking.drizzle_core(bgr[:, :, channel['G']], M[channel['G']], upscale_factor, drizzle_pixel_fraction), channel['G'])
+    stack.add_channel_data(*Stacking.drizzle_core(bgr[:, :, channel['R']], M[channel['R']], upscale_factor, drizzle_pixel_fraction), channel['R'])
+    stack.add_channel_data(*Stacking.drizzle_core(bgr[:, :, channel['B']], M[channel['B']], upscale_factor, drizzle_pixel_fraction), channel['B'])
+    print(f"✅ Drizzle completato per l'immagine {image}.")
+    # Deallocazione 
+    del bgr
+    gc.collect()
+### Ottenimento dell'immagine finale
+final_image = stack.get_final_image()
+print("\n✅ Stacking completato per tutte le immagini.")
+### Richardson-Lucy deconvolution (opzionale)
+if use_richardson_lucy:
+    print("🔄 Applicazione della deconvoluzione Richardson-Lucy...")
+    psf_size = 5
+    psf = np.ones((psf_size, psf_size)) / (psf_size ** 2)
+    for i in range(3):
+        final_image[:, :, i] = richardson_lucy(final_image[:, :, i], psf, rl_iterations)
+    print("✅ Deconvoluzione Richardson-Lucy completata.")
+### Salvataggio dell'immagine finale
+final_path = "Final_image" + output_format
+Import.dng_export(final_image, final_path)
