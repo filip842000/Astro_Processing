@@ -72,18 +72,18 @@ class DrizzleStacker:
         Aggiunge un frame drizzle all'accumulatore.
         """
         # Somma pixelwise dei valori colore
-        self.accum_image += drizzled_img
+        self.pixels += drizzled_img
         
         # Somma pixelwise dei pesi
-        self.accum_weights += weight_map
+        self.weights += weight_map
     
     def add_channel_data(self, drizzled_data, weight_map, channel_idx):
         """
         Aggiunge i dati di un singolo canale alla 'tela' principale.
         channel_idx: 0 per Blu, 1 per Verde, 2 per Rosso (standard OpenCV)
         """
-        self.accum_image[:, :, channel_idx] += drizzled_data
-        self.accum_weights[:, :, channel_idx] += weight_map
+        self.pixels[:, :, channel_idx] += drizzled_data
+        self.weights[:, :, channel_idx] += weight_map
 
     def get_final_image(self):
         """
@@ -91,14 +91,14 @@ class DrizzleStacker:
         """
         # Creiamo una maschera per evitare la divisione per zero
         # (zone dove nessun frame è mai 'caduto')
-        mask = self.accum_weights > 0
+        mask = self.weights > 0
         
-        final_img = np.zeros_like(self.accum_image)
+        final_img = np.zeros_like(self.pixels)
         
         # Dividiamo ogni canale per la mappa dei pesi
         # Usiamo [:, :, None] per trasmettere (broadcast) il peso 2D sui 3 canali RGB
         for i in range(3):
-            final_img[mask, i] = self.accum_image[mask, i] / self.accum_weights[mask]
+            final_img[mask, i] = self.pixels[mask, i] / self.weights[mask]
             
         return final_img
 
@@ -151,7 +151,7 @@ def drizzle_core(img, M, upscale_factor, pixfrac):
     # 4. Ricostruzione dell'Immagine
     # Preleviamo il valore del pixel originale usando l'interpolazione Nearest
     # perché il Drizzle non deve creare nuovi valori, deve solo 'spostarli'.
-    drizzled_img = cv2.remap(img, x_src, y_src, cv2.INTER_NEAREST)
+    drizzled_img = cv2.remap(img, x_src.astype(np.float32), y_src.astype(np.float32), cv2.INTER_NEAREST)
     
     # Applichiamo il ritaglio del PixFrac: azzeriamo tutto ciò che è fuori dal drop
     drizzled_img[~inside_drop] = 0

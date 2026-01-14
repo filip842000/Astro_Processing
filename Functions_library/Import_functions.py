@@ -60,12 +60,12 @@ def general2bgr(file_path: str, target_dtype: str) -> np.ndarray:
             # demosaic_algorithm=rawpy.DemosaicAlgorithm.LMMSE # Alternativa ottima
             # Post-elaborazione: forziamo 16-bit per non perdere precisione durante lo sviluppo
             # no_auto_bright=True evita che il software "stiri" l'istogramma
-            img = raw.postprocess( demosaic_algorithm = DemosaicAlgorithm.LMMSE,
-                                   use_camera_wb      = False   ,
-                                   no_auto_bright     = True    ,
-                                   output_bps         = 16      ,
-                                   no_auto_scale      = True    ,
-                                   user_flip          = 0       )
+            img = raw.postprocess( demosaic_algorithm = DemosaicAlgorithm.LINEAR,
+                                   use_camera_wb      = False                   ,
+                                   no_auto_bright     = True                    ,
+                                   output_bps         = 16                      ,
+                                   no_auto_scale      = True                    ,
+                                   user_flip          = 0                       )
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             # Il valore massimo dei dati RAW dipende dal sensore (es. 12, 14 o 16 bit)
             current_max = raw.white_level

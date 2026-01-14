@@ -27,7 +27,7 @@ import Functions_library.Stacking_functions as Stacking
 ####################################################################################################################################
 
 ### Variables and Parameters
-camera_acquisitions_folder = "C:/Users/filip/Desktop/Sessione_25-12-28/Orion 01/Foto all'ombra"
+camera_acquisitions_folder = "C:/Users/filip/Downloads/Photos-1-001"
 midsave_folder = "C:/Users/filip/Desktop/Sessione_25-12-28/Orion 01/Foto all'ombra/MidSaves"
 input_format = ".dng" # Da usare se si vuole importare un formato nello specifico
 output_format = ".tif" # Formato di output desiderato
@@ -35,13 +35,13 @@ processing_format = "float32" # Formato di elaborazione desiderato: "uint8", "ui
 output_bit_depth = "uint16" # Profondità di bit di output desiderata: "uint8", "uint16", "float32"
 reference_identifier = 0 # Identificatore dell'immagine di riferimento per l'allineamento (indice nell'array)
 # Cropping paramteres
-crop_top_pc = 10.0    # Percentuale da ritagliare dall'alto
-crop_bottom_pc = 10.0 # Percentuale da ritagliare dal basso
+crop_top_pc = 56.0    # Percentuale da ritagliare dall'alto
+crop_bottom_pc = 30.0 # Percentuale da ritagliare dal basso
 crop_left_pc = 10.0   # Percentuale da ritagliare da sinistra
-crop_right_pc = 10.0  # Percentuale da ritagliare da destra
+crop_right_pc = 78.0  # Percentuale da ritagliare da destra
 # Alignment parameters
-max_alignment_iterations = 5000
-alignment_precision = 1e-7
+max_alignment_iterations = 500
+alignment_precision = 1e-9
 # Drizzle parameters
 upscale_factor = 2
 drizzle_pixel_fraction = 0.8
@@ -66,8 +66,8 @@ except Exception as e:
     print(f"❌ Errore nel caricamento dell'immagine di riferimento {images_paths[reference_identifier]}: {e}")
     raise e
 
+reference_bgr = Cropping.crop_by_percentage(reference_bgr, crop_top_pc, crop_bottom_pc, crop_left_pc, crop_right_pc) #Cropping opzionale
 reference = reference_bgr[:, :, 1]  # Canale verde come riferimento
-reference = Cropping.crop_by_percentage(reference, crop_top_pc, crop_bottom_pc, crop_left_pc, crop_right_pc) #Cropping opzionale
 # Deallocazione 
 del reference_bgr
 gc.collect()
@@ -89,8 +89,10 @@ for idx, image in enumerate(images_paths):
         # Import dell'immagine
         bgr = Import.general2bgr(str(image), processing_format)
         print(f"✅ Immagine caricata: {image}.")
+        print(f"Dimensioni immagine: {bgr.shape[1]}x{bgr.shape[0]} pixel.")
         # Cropping (opzionale)
         bgr = Cropping.crop_by_percentage(bgr, crop_top_pc, crop_bottom_pc, crop_left_pc, crop_right_pc)
+        print(f"✅ Ritaglio completato: {bgr.shape[1]}x{bgr.shape[0]} pixel.")
     except Exception as e:
         print(f"❌ Errore nel caricamento dell'immagine {image}: {e}")
         continue
@@ -99,9 +101,12 @@ for idx, image in enumerate(images_paths):
     if idx > 1:
         earth_accumulator += logm(M_delta)
         earth_counter += 1
-    M_earth = expm(earth_accumulator / earth_counter) # type: ignore
+        M_earth = expm(earth_accumulator / earth_counter) # type: ignore
+        print(f"✅ Matrice di correzione della rotazione terrestre aggiornata:\n{M_earth}")
     M_prev = M[channel['G']] #Aggiorno M_prev
     M[channel['G']] = np.matmul(M_earth, M[channel['G']])  # Composizione delle trasformazioni
+    print("✅ Correzione della rotazione terrestre applicata.")
+    print(f"NUova Matrice di trasformazione canale G:\n{M[channel['G']]}")
     # Allineamento dell'immagine
     try:
         M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[:, :, channel['G']], M[channel['G']], max_alignment_iterations, alignment_precision)
@@ -110,7 +115,8 @@ for idx, image in enumerate(images_paths):
             M[channel['G']], sift_success = Alignment.sift(reference, bgr[:, :, channel['G']])
             M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[:, :, channel['G']], M[channel['G']], max_alignment_iterations, alignment_precision)
         M[channel['R']], _ = Alignment.ecc(reference, bgr[:, :, channel['R']], M[channel['G']], max_alignment_iterations, alignment_precision)
-        M[channel['B']], _ = Alignment.ecc(reference, bgr[channel['B']], M[channel['G']], max_alignment_iterations, alignment_precision)
+        M[channel['B']], _ = Alignment.ecc(reference, bgr[:, :, channel['B']], M[channel['G']], max_alignment_iterations, alignment_precision)
+        print("✅ Allineamento ECC completato.")
     except Exception as e:
         print(f"❌ Errore nell'allineamento {image}: {e}")
         print("Suggerimento: controlla il formato di input, forse è da cambiare")
