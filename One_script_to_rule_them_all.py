@@ -27,7 +27,7 @@ import Functions_library.Stacking_functions as Stacking
 ####################################################################################################################################
 
 ### Variables and Parameters
-camera_acquisitions_folder = "C:/Users/filip/Downloads/Photos-1-001"
+camera_acquisitions_folder = "C:/Users/filip/Desktop/Sessione_25-12-28/Orion 01/Foto all'ombra" # Cartella contenente le acquisizioni della camera
 midsave_folder = "C:/Users/filip/Desktop/Sessione_25-12-28/Orion 01/Foto all'ombra/MidSaves"
 input_format = ".dng" # Da usare se si vuole importare un formato nello specifico
 output_format = ".tif" # Formato di output desiderato
@@ -35,10 +35,10 @@ processing_format = "float32" # Formato di elaborazione desiderato: "uint8", "ui
 output_bit_depth = "uint16" # Profondità di bit di output desiderata: "uint8", "uint16", "float32"
 reference_identifier = 0 # Identificatore dell'immagine di riferimento per l'allineamento (indice nell'array)
 # Cropping paramteres
-crop_top_pc = 56.0    # Percentuale da ritagliare dall'alto
-crop_bottom_pc = 30.0 # Percentuale da ritagliare dal basso
-crop_left_pc = 10.0   # Percentuale da ritagliare da sinistra
-crop_right_pc = 78.0  # Percentuale da ritagliare da destra
+crop_top_pc = 37.0    # Percentuale da ritagliare dall'alto
+crop_bottom_pc = 32.0 # Percentuale da ritagliare dal basso
+crop_left_pc = 40.0   # Percentuale da ritagliare da sinistra
+crop_right_pc = 30.0  # Percentuale da ritagliare da destra
 # Alignment parameters
 max_alignment_iterations = 500
 alignment_precision = 1e-9
@@ -67,6 +67,7 @@ except Exception as e:
     raise e
 
 reference_bgr = Cropping.crop_by_percentage(reference_bgr, crop_top_pc, crop_bottom_pc, crop_left_pc, crop_right_pc) #Cropping opzionale
+Import.dng_export(reference_bgr, "Reference_image.dng") #Salvataggio immagine di riferimento
 reference = reference_bgr[:, :, 1]  # Canale verde come riferimento
 # Deallocazione 
 del reference_bgr
