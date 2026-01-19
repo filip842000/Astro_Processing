@@ -93,13 +93,18 @@ class DrizzleStacker:
         # (zone dove nessun frame è mai 'caduto')
         mask = self.weights > 0
         
-        final_img = np.zeros_like(self.pixels)
+        final_img = np.zeros_like(self.pixels, dtype = np.float32)
         
         # Dividiamo ogni canale per la mappa dei pesi
         # Usiamo [:, :, None] per trasmettere (broadcast) il peso 2D sui 3 canali RGB
         for i in range(3):
             final_img[mask, i] = self.pixels[mask, i] / self.weights[mask]
             
+        return final_img
+    
+    def get_final_3channels(self):
+        final_img = np.zeros_like(self.pixels, dtype = np.float32)
+        np.divide(self.pixels, self.weights, out = final_img, where = (self.weights > 0))
         return final_img
 
 def drizzle_core(img, M, upscale_factor, pixfrac):

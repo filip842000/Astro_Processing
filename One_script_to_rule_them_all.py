@@ -130,7 +130,7 @@ for idx, image in enumerate(images_paths):
     del bgr
     gc.collect()
 ### Ottenimento dell'immagine finale
-final_image = stack.get_final_image()
+final_image = stack.get_final_3channels()
 print("\n✅ Stacking completato per tutte le immagini.")
 ### Richardson-Lucy deconvolution (opzionale)
 if use_richardson_lucy:
