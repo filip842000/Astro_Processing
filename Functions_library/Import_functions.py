@@ -20,7 +20,7 @@ from rawpy import DemosaicAlgorithm # type: ignore
 import tifffile
 
 ### Import delle immagini raw e standard con normalizzazione della profondità di bit
-def general2bgr(file_path: str, target_dtype: str) -> np.ndarray:
+def general2bgr(file_path: str, target_dtype: str, userflip: int) -> np.ndarray:
     """
     # Summary
     Carica un singolo file immagine, ne rileva la profondità di bit originale
@@ -65,7 +65,7 @@ def general2bgr(file_path: str, target_dtype: str) -> np.ndarray:
                                    no_auto_bright     = True                    ,
                                    output_bps         = 16                      ,
                                    no_auto_scale      = True                    ,
-                                   user_flip          = 0                       )
+                                   user_flip          = userflip                )
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             # Il valore massimo dei dati RAW dipende dal sensore (es. 12, 14 o 16 bit)
             current_max = raw.white_level
@@ -119,12 +119,81 @@ def dng_export(image: np.ndarray, output_path: str):
         print(f"❌ Errore durante l'esportazione in DNG: {e}")
 
 
+def raw16_export(image: np.ndarray, output_path: str):
+    """
+    ## Funzione ausiliaria
 
+    Esporta un'immagine in formato RAW (TIFF) a 16 bit utilizzando tifffile.
+    """
+    try:
+        rgb = image[:, :, ::-1].astype(np.uint16)  # Converti BGR a RGB
 
+        tifffile.imwrite(output_path,
+                         rgb,
+                         photometric='rgb',
+                         planarconfig='contig',
+                         metadata={'axes': 'YXC'})
+        
+        print(f"✅ Immagine esportata come RAW in {output_path}.")
+    except Exception as e:
+        print(f"❌ Errore durante l'esportazione in RAW: {e}")
 
+def raw8_export(image: np.ndarray, output_path: str):
+    """
+    ## Funzione ausiliaria
 
+    Esporta un'immagine in formato RAW (TIFF) a 8 bit utilizzando tifffile.
+    """
+    try:
+        rgb = image[:, :, ::-1].astype(np.uint8)  # Converti BGR a RGB
 
+        tifffile.imwrite(output_path,
+                         rgb,
+                         photometric='rgb',
+                         planarconfig='contig',
+                         metadata={'axes': 'YXC'})
+        
+        print(f"✅ Immagine esportata come RAW in {output_path}.")
+    except Exception as e:
+        print(f"❌ Errore durante l'esportazione in RAW: {e}")
 
+def tiff16_export(image: np.ndarray, output_path: str):
+    """
+    ## Funzione ausiliaria
+
+    Esporta un'immagine in formato TIFF a 16 bit utilizzando tifffile.
+    """
+    try:
+        rgb = image[:, :, ::-1].astype(np.uint16)  # Converti BGR a RGB
+
+        tifffile.imwrite(output_path,
+                         rgb,
+                         photometric='rgb',
+                         planarconfig='contig',
+                         metadata={'axes': 'YXC'})
+        
+        print(f"✅ Immagine esportata come TIFF in {output_path}.")
+    except Exception as e:
+        print(f"❌ Errore durante l'esportazione in TIFF: {e}")
+
+def tiff8_export(image: np.ndarray, output_path: str):
+    """
+    ## Funzione ausiliaria
+
+    Esporta un'immagine in formato TIFF a 8 bit utilizzando tifffile.
+    """
+    try:
+        rgb = image[:, :, ::-1].astype(np.uint8)  # Converti BGR a RGB
+
+        tifffile.imwrite(output_path,
+                         rgb,
+                         photometric='rgb',
+                         planarconfig='contig',
+                         metadata={'axes': 'YXC'})
+        
+        print(f"✅ Immagine esportata come TIFF in {output_path}.")
+    except Exception as e:
+        print(f"❌ Errore durante l'esportazione in TIFF: {e}")
 
 
 

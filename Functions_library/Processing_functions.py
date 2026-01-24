@@ -48,3 +48,46 @@ def crop_by_percentage(img, top_pc, bottom_pc, left_pc, right_pc):
     cropped_img = img[start_row:end_row, start_col:end_col, :]
 
     return cropped_img
+
+def normalizer(image: np.ndarray, reference_image: np.ndarray) -> np.ndarray:
+    """
+    Normalizza la luminosità di un'immagine rispetto a un'immagine di riferimento.
+    Normalizziamo sul valore medio (o mediano) per ignorare i pixel estremi (hot/dead pixels).
+    """
+
+    # 1. Scegli l'immagine di riferimento (usiamo la prima come baseline)
+    mask = np.any(reference_image > 0.7, axis=2)
+    celestial_pixels = reference_image[mask]
+    # 2. Calcola il fattore di riferimento (es. la mediana di tutti i pixel)
+    # np.median è più robusto rispetto a np.mean o np.max per ignorare gli estremi.
+    reference_median = np.median(celestial_pixels, axis=(0, 1))  # Mediana per canale (R, G, B)
+
+    # Calcola la mediana dell'immagine corrente
+    mask = np.any(image > 0.7, axis=2)
+    current_median = np.median(image[mask], axis=(0, 1))
+    # Calcola il fattore di scaling necessario
+    scale_factor = reference_median / current_median
+    # Applica il fattore di scaling
+    normalized_img = image * scale_factor
+        
+    print(f"✅ Normalizzazione completata")
+    return normalized_img
+
+def alignment_prep(image: np.ndarray):
+    # Prepara l'immagine per l'allineamento (median denoising, normalizzazione, thresholding, gaussian blur, ecc.)
+    # Implementazione specifica dipende dal contesto
+
+    # Median Denoising
+    image = cv2.medianBlur(image, 3)  # Esempio: filtro mediano per ridurre il rumore
+    
+    # Normalizzazione manuale per canale (per evitare problemi di tipo con cv2.normalize)
+    # Trova min/max per canale e scala a [0, 1]
+    image = (image - image.min(axis=(0, 1), keepdims=True)) / (image.max(axis=(0, 1), keepdims=True) - image.min(axis=(0, 1), keepdims=True))
+
+    # Thresholding per evidenziare le stelle
+    _, image = cv2.threshold(image, 0.15, 1.0, cv2.THRESH_TOZERO)
+
+    # Gaussian Blur per ridurre il rumore
+    image = cv2.GaussianBlur(image, (5, 5), 0)
+    
+    return image

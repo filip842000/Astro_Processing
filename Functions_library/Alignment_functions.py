@@ -97,6 +97,16 @@ def ecc(target_g: np.ndarray, source_g: np.ndarray, M_init: np.ndarray, max_iter
     # OpenCV ECC richiede una matrice 3x3 per MOTION_HOMOGRAPHY
     M_ecc = M_init.astype(np.float32)
 
+    target_g = cv2.GaussianBlur(target_g, (3, 3), 0)
+    source_g = cv2.GaussianBlur(source_g, (3, 3), 0)
+
+    target_back = cv2.blur(target_g, (25, 25))
+    source_back = cv2.blur(source_g, (25, 25))
+
+    # Sottraiamo il fondo: restano solo le stelle su un nero quasi perfetto
+    target_g = cv2.subtract(target_g, target_back)
+    source_g = cv2.subtract(source_g, source_back)
+
     try:
         # 3. Esecuzione dell'algoritmo ECC
         # MOTION_HOMOGRAPHY permette la massima libertà (distorsioni prospettiche)
@@ -108,7 +118,7 @@ def ecc(target_g: np.ndarray, source_g: np.ndarray, M_init: np.ndarray, max_iter
                                            cast(Any, None)       , # Maschera (non necessaria se le immagini sono pulite)
                                            5                     ) # Numero di livelli della piramide gaussiana (aiuta la convergenza)
         
-        return M_ecc.astype(np.float64), True
+        return np.linalg.inv(M_ecc).astype(np.float64), True
 
     except cv2.error as e:
         # Se l'algoritmo non converge (es. troppe nuvole o mosso eccessivo)
@@ -164,111 +174,3 @@ def apply_transformation(img: np.ndarray, M: np.ndarray, interpolation=cv2.INTER
                                           borderMode  = cv2.BORDER_CONSTANT ,
                                           borderValue = border_value        )  # Riempie con il nero
     return transformed_img
-
-### Preparazione di un frame per lo stacking Drizzle
-def apply_drizzle_step(img, M, upscale_factor):
-    """
-    Prepara un singolo frame per lo stacking Drizzle.
-    
-    Inputs:
-    - img: Immagine originale BGR (float32).
-    - M: Matrice di trasformazione 3x3 (float64).
-    - upscale_factor: Rapporto di ingrandimento (3 per Drizzle 3x).
-    
-    Outputs:
-    - drizzled_frame: Immagine upscalata con i pixel posizionati.
-    - weight_map: Mappa dei pesi (fondamentale per la media finale).
-    """
-    h, w = img.shape[:2]
-    new_h, new_w = h * upscale_factor, w * upscale_factor
-    
-    # 1. Modifichiamo la matrice M per la nuova scala
-    # Dobbiamo scalare le coordinate di destinazione per il nuovo canvas
-    S = np.array([
-        [upscale_factor, 0, 0],
-        [0, upscale_factor, 0],
-        [0, 0, 1]
-    ], dtype=np.float64)
-    
-    M_drizzle = np.matmul(S, M)
-    
-    # 2. Creiamo il frame 'spruzzato'
-    # Usiamo INTER_NEAREST perché nel Drizzle non vogliamo interpolazione 
-    # (vogliamo che il pixel 'cada' in un punto preciso senza sfumare)
-    drizzled_frame = cv2.warpPerspective(
-        img, 
-        M_drizzle, 
-        (new_w, new_h), 
-        flags=cv2.INTER_NEAREST
-    )
-    
-    # 3. Creiamo la Weight Map (Mappa dei pesi)
-    # Serve a contare quanti pixel cadono in ogni punto della griglia grande
-    # Creiamo una maschera di 1 dove c'è il pixel e 0 dove è vuoto
-    mask = (np.sum(drizzled_frame, axis=2) > 0).astype(np.float32)
-    
-    # Applichiamo il PixFrac (opzionale in questa implementazione semplificata)
-    # In una implementazione pura, il pixfrac ridurrebbe la dimensione del punto,
-    # qui lo simuliamo mantenendo il peso unitario per ogni drop.
-    
-    return drizzled_frame, mask
-
-def pix_frac_drizzle(img: np.ndarray, M: np.ndarray, upscale_factor: int, pixfrac: float) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Esegue il Drizzle raffinato con gestione del PixFrac tramite mappatura inversa.
-    
-    Inputs:
-    - img: Immagine BGR (float32).
-    - M: Matrice di allineamento 3x3 (float64).
-    - upscale_factor: Fattore di ingrandimento (default 3).
-    - pixfrac: Dimensione relativa della 'goccia' (0.1 - 1.0).
-    
-    Outputs:
-    - drizzled_img: Frame proiettato sulla griglia densa.
-    - weight_map: Mappa dei pesi basata sull'area del drop.
-    """
-    h, w = img.shape[:2]
-    new_h, new_w = int(h * upscale_factor), int(w * upscale_factor)
-    
-    # 1. Creazione della griglia di destinazione (High-Res)
-    # Generiamo tutte le coordinate (x, y) della griglia 3x
-    y_dst, x_dst = np.indices((new_h, new_w), dtype=np.float32)
-    
-    # 2. Inversione della trasformazione
-    # Vogliamo sapere per ogni pixel della griglia finale, dove "cade" nell'originale.
-    # Scaliamo M per tenere conto dell'upscale
-    S = np.array([[upscale_factor, 0, 0], [0, upscale_factor, 0], [0, 0, 1]])
-    M_drizzle = S @ M
-    M_inv = np.linalg.inv(M_drizzle)
-    
-    # Trasformazione delle coordinate tramite la matrice inversa
-    # Calcolo coordinate omogenee: x_src = (M_inv * x_dst) / w_src
-    denominator = M_inv[2,0] * x_dst + M_inv[2,1] * y_dst + M_inv[2,2]
-    x_src = (M_inv[0,0] * x_dst + M_inv[0,1] * y_dst + M_inv[0,2]) / denominator
-    y_src = (M_inv[1,0] * x_dst + M_inv[1,1] * y_dst + M_inv[1,2]) / denominator
-
-    # 3. Logica Raffinata del PixFrac
-    # Troviamo la distanza tra la coordinata calcolata e il centro del pixel sorgente
-    # dx e dy rappresentano quanto siamo lontani dal centro perfetto del pixel originale
-    dx = np.abs(x_src - np.round(x_src))
-    dy = np.abs(y_src - np.round(y_src))
-    
-    # Un punto della griglia finale 'riceve' luce solo se cade dentro il perimetro del PixFrac.
-    # Se pixfrac=1.0, la soglia è 0.5 (copre tutto il pixel).
-    # Se pixfrac=0.5, la soglia è 0.25 (il drop è un quadratino centrale).
-    limit = pixfrac / 2.0
-    inside_drop = (dx < limit) & (dy < limit)
-    
-    # 4. Ricostruzione dell'Immagine
-    # Preleviamo il valore del pixel originale usando l'interpolazione Nearest
-    # perché il Drizzle non deve creare nuovi valori, deve solo 'spostarli'.
-    drizzled_img = cv2.remap(img, x_src, y_src, cv2.INTER_NEAREST)
-    
-    # Applichiamo il ritaglio del PixFrac: azzeriamo tutto ciò che è fuori dal drop
-    drizzled_img[~inside_drop] = 0
-    
-    # 5. Generazione Mappa Pesi
-    # Ogni pixel che ha ricevuto dati pesa pixfrac^2 (area del drop)
-    weight_map = inside_drop.astype(np.float32) * (pixfrac**2)
-    
-    return drizzled_img, weight_map

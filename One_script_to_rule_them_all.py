@@ -17,7 +17,7 @@ from scipy.linalg import logm, expm
 import Functions_library.Import_functions as Import
 import Functions_library.Conversion_functions as Conversion
 import Functions_library.Alignment_functions as Alignment
-import Functions_library.Cropping_functions as Cropping
+import Functions_library.Processing_functions as Processing
 import Functions_library.Stacking_functions as Stacking
 
 ####################################################################################################################################
@@ -30,18 +30,19 @@ import Functions_library.Stacking_functions as Stacking
 camera_acquisitions_folder = "C:/Users/filip/Desktop/Sessione_25-12-28/Orion 01/Foto all'ombra" # Cartella contenente le acquisizioni della camera
 midsave_folder = "C:/Users/filip/Desktop/Sessione_25-12-28/Orion 01/Foto all'ombra/MidSaves"
 input_format = ".dng" # Da usare se si vuole importare un formato nello specifico
-output_format = ".tif" # Formato di output desiderato
+output_format = ".dng" # Formato di output desiderato
 processing_format = "float32" # Formato di elaborazione desiderato: "uint8", "uint16", "float32", "float64"
-output_bit_depth = "uint16" # Profondità di bit di output desiderata: "uint8", "uint16", "float32"
-reference_identifier = 0 # Identificatore dell'immagine di riferimento per l'allineamento (indice nell'array)
+raw_flip = 6 # Correzione orientamento per immagini RAW: 0 = nessuna correzione, 1 = rotazione 180°, 2 = flip orizzontale, 3 = flip verticale
+# output_bit_depth = "uint16" # Profondità di bit di output desiderata: "uint8", "uint16", "float32"
+reference_identifier = 1 # Identificatore dell'immagine di riferimento per l'allineamento (indice nell'array)
 # Cropping paramteres
-crop_top_pc = 37.0    # Percentuale da ritagliare dall'alto
-crop_bottom_pc = 32.0 # Percentuale da ritagliare dal basso
-crop_left_pc = 40.0   # Percentuale da ritagliare da sinistra
-crop_right_pc = 30.0  # Percentuale da ritagliare da destra
+crop_top_pc = 100 * (1 - (4700/8000))    # Percentuale da ritagliare dall'alto
+crop_bottom_pc = 100 * (1 - (5500/8000)) # Percentuale da ritagliare dal basso
+crop_left_pc = 100 * (1 - (3600/6000))   # Percentuale da ritagliare da sinistra
+crop_right_pc = 100 * (1 - (4300/6000))  # Percentuale da ritagliare da destra
 # Alignment parameters
-max_alignment_iterations = 500
-alignment_precision = 1e-9
+max_alignment_iterations = 100
+alignment_precision = 1e-4
 # Drizzle parameters
 upscale_factor = 2
 drizzle_pixel_fraction = 0.8
@@ -60,27 +61,26 @@ if len(images_paths) == 0:
 
 ### Immagine di riferimento per l'allineamento
 try:
-    reference_bgr = Import.general2bgr(str(images_paths[reference_identifier]), processing_format)
+    reference_bgr = Import.general2bgr(str(images_paths[reference_identifier]), processing_format, raw_flip)
     print(f"✅ Immagine di riferimento caricata: {images_paths[reference_identifier]}.")
 except Exception as e:
     print(f"❌ Errore nel caricamento dell'immagine di riferimento {images_paths[reference_identifier]}: {e}")
     raise e
 
-reference_bgr = Cropping.crop_by_percentage(reference_bgr, crop_top_pc, crop_bottom_pc, crop_left_pc, crop_right_pc) #Cropping opzionale
+reference_bgr = Processing.crop_by_percentage(reference_bgr, crop_top_pc, crop_bottom_pc, crop_left_pc, crop_right_pc) #Cropping opzionale
 Import.dng_export(reference_bgr, "Reference_image.dng") #Salvataggio immagine di riferimento
 reference = reference_bgr[:, :, 1]  # Canale verde come riferimento
-# Deallocazione 
-del reference_bgr
-gc.collect()
 
 ### Inizializzazione pre-ciclo
 channel = {'B': 0, 'G': 1, 'R': 2}
 M = [np.eye(3), np.eye(3), np.eye(3)]  # Matrice di trasformazione identità come default
 M_earth = np.eye(3)  # Matrice di trasformazione identità per la correzione della rotazione terrestre
 M_prev = np.eye(3)
+M_delta = np.eye(3)
 earth_accumulator = np.zeros((3, 3), dtype=np.float32)
 earth_counter = 0
 stack =  Stacking.DrizzleStacker(reference.shape[0], reference.shape[1], upscale_factor) # Immagine di base per il drizzle
+predict = True
 
 ### Ciclo di elaborazione delle immagini
 for idx, image in enumerate(images_paths):
@@ -88,36 +88,43 @@ for idx, image in enumerate(images_paths):
     print(f"Avanzamento: |{'█' * (idx + 1)}{' ' * (len(images_paths) - idx - 1)}| - {((idx + 1) / len(images_paths)) * 100:.2f}%")
     try:
         # Import dell'immagine
-        bgr = Import.general2bgr(str(image), processing_format)
+        bgr = Import.general2bgr(str(image), processing_format, raw_flip)
         print(f"✅ Immagine caricata: {image}.")
         print(f"Dimensioni immagine: {bgr.shape[1]}x{bgr.shape[0]} pixel.")
         # Cropping (opzionale)
-        bgr = Cropping.crop_by_percentage(bgr, crop_top_pc, crop_bottom_pc, crop_left_pc, crop_right_pc)
+        bgr = Processing.crop_by_percentage(bgr, crop_top_pc, crop_bottom_pc, crop_left_pc, crop_right_pc)
         print(f"✅ Ritaglio completato: {bgr.shape[1]}x{bgr.shape[0]} pixel.")
+        bgr = Processing.normalizer(bgr, reference_bgr)
     except Exception as e:
         print(f"❌ Errore nel caricamento dell'immagine {image}: {e}")
         continue
-    M_prev_inv = np.linalg.inv(M_prev)
-    M_delta = np.matmul(M_prev_inv, M[channel['G']]) #Calcolo il delta prima di aggiornare M_prev
-    if idx > 1:
-        earth_accumulator += logm(M_delta)
-        earth_counter += 1
-        M_earth = expm(earth_accumulator / earth_counter) # type: ignore
-        print(f"✅ Matrice di correzione della rotazione terrestre aggiornata:\n{M_earth}")
-    M_prev = M[channel['G']] #Aggiorno M_prev
-    M[channel['G']] = np.matmul(M_earth, M[channel['G']])  # Composizione delle trasformazioni
-    print("✅ Correzione della rotazione terrestre applicata.")
-    print(f"NUova Matrice di trasformazione canale G:\n{M[channel['G']]}")
-    # Allineamento dell'immagine
-    try:
-        M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[:, :, channel['G']], M[channel['G']], max_alignment_iterations, alignment_precision)
+#    M_delta_prev = M_delta
+#    M_prev_inv = np.linalg.inv(M_prev)
+#    M_delta = np.matmul(M_prev_inv, M[channel['G']]) #Calcolo il delta prima di aggiornare M_prev
+#    if (idx > 1) and predict:
+#        M_earth = expm((logm(M_delta_prev) + logm(M_delta)) / 2) # type: ignore
+#        print(f"✅ Matrice di correzione della rotazione terrestre aggiornata:\n{M_earth}")
+#    else:
+#        M_earth = np.eye(3)
+#    M_prev = M[channel['G']] #Aggiorno M_prev
+#    M[channel['G']] = np.matmul(M_earth, M[channel['G']])  # Composizione delle trasformazioni
+#    print("✅ Correzione della rotazione terrestre applicata.")
+#    print(f"NUova Matrice di trasformazione canale G:\n{M[channel['G']]}")
+#    # Allineamento dell'immagine
+    M_0 = np.linalg.inv(M[channel['G']]).astype(np.float64)
+    try:       
+        M[channel['G']], ecc_success = Alignment.ecc(Processing.alignment_prep(reference), Processing.alignment_prep(bgr[:, :, channel['G']]), np.linalg.inv(M[channel['G']]).astype(np.float64), max_alignment_iterations, alignment_precision)
         if not ecc_success:
+            predict = False
             print(f"⚠️ Allineamento ECC fallito per l'immagine {image}: Tentativo con SIFT.")
-            M[channel['G']], sift_success = Alignment.sift(reference, bgr[:, :, channel['G']])
-            M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[:, :, channel['G']], M[channel['G']], max_alignment_iterations, alignment_precision)
-        M[channel['R']], _ = Alignment.ecc(reference, bgr[:, :, channel['R']], M[channel['G']], max_alignment_iterations, alignment_precision)
-        M[channel['B']], _ = Alignment.ecc(reference, bgr[:, :, channel['B']], M[channel['G']], max_alignment_iterations, alignment_precision)
+            M[channel['G']], sift_success = Alignment.sift(Conversion.float_to_uint8(Processing.alignment_prep(reference)), Conversion.float_to_uint8(Processing.alignment_prep(bgr[:, :, channel['G']])))
+            M[channel['G']], ecc_success = Alignment.ecc(Processing.alignment_prep(reference), Processing.alignment_prep(bgr[:, :, channel['G']]), np.linalg.inv(M[channel['G']]).astype(np.float64), max_alignment_iterations, alignment_precision)
+        else:
+            predict = True
+        M[channel['R']], _ = Alignment.ecc(Processing.alignment_prep(reference), Processing.alignment_prep(bgr[:, :, channel['R']]), np.linalg.inv(M[channel['G']]).astype(np.float64), max_alignment_iterations, alignment_precision)
+        M[channel['B']], _ = Alignment.ecc(Processing.alignment_prep(reference), Processing.alignment_prep(bgr[:, :, channel['B']]), np.linalg.inv(M[channel['G']]).astype(np.float64), max_alignment_iterations, alignment_precision)
         print("✅ Allineamento ECC completato.")
+
     except Exception as e:
         print(f"❌ Errore nell'allineamento {image}: {e}")
         print("Suggerimento: controlla il formato di input, forse è da cambiare")
@@ -140,6 +147,18 @@ if use_richardson_lucy:
     for i in range(3):
         final_image[:, :, i] = richardson_lucy(final_image[:, :, i], psf, rl_iterations)
     print("✅ Deconvoluzione Richardson-Lucy completata.")
+
 ### Salvataggio dell'immagine finale
-final_path = "Final_image" + output_format
-Import.dng_export(final_image, final_path)
+#final_path = "Final_image" + output_format
+#try:
+#    Import.dng_export(final_image, final_path)
+#except Exception as e:
+#    print(f"❌ Errore nel salvataggio dell'immagine finale in {final_path}: {e}")
+try:
+    Import.raw16_export(Conversion.float_to_uint16(final_image), "Final_image_raw16.dng")
+except Exception as e:
+    print(f"❌ Errore nel salvataggio dell'immagine finale in Final_image_raw16.dng: {e}")
+try:
+    Import.tiff16_export(Conversion.float_to_uint16(final_image), "Final_image_tiff16.tiff")
+except Exception as e:
+    print(f"❌ Errore nel salvataggio dell'immagine finale in Final_image_tiff16.tiff: {e}")
