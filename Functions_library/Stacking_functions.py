@@ -132,8 +132,7 @@ def drizzle_core(img, M, upscale_factor, pixfrac):
     # Vogliamo sapere per ogni pixel della griglia finale, dove "cade" nell'originale.
     # Scaliamo M per tenere conto dell'upscale
     S = np.array([[upscale_factor, 0, 0], [0, upscale_factor, 0], [0, 0, 1]])
-    M_drizzle = S @ M
-    M_inv = np.linalg.inv(M_drizzle)
+    M_inv = M @ np.linalg.inv(S)
     
     # Trasformazione delle coordinate tramite la matrice inversa
     # Calcolo coordinate omogenee: x_src = (M_inv * x_dst) / w_src

@@ -42,7 +42,7 @@ crop_left_pc = 100 * (1 - (3600/6000))   # Percentuale da ritagliare da sinistra
 crop_right_pc = 100 * (1 - (4300/6000))  # Percentuale da ritagliare da destra
 # Alignment parameters
 max_alignment_iterations = 100
-alignment_precision = 1e-4
+alignment_precision = 1e-5
 # Drizzle parameters
 upscale_factor = 2
 drizzle_pixel_fraction = 0.8
@@ -94,37 +94,30 @@ for idx, image in enumerate(images_paths):
         # Cropping (opzionale)
         bgr = Processing.crop_by_percentage(bgr, crop_top_pc, crop_bottom_pc, crop_left_pc, crop_right_pc)
         print(f"✅ Ritaglio completato: {bgr.shape[1]}x{bgr.shape[0]} pixel.")
-        bgr = Processing.normalizer(bgr, reference_bgr)
     except Exception as e:
         print(f"❌ Errore nel caricamento dell'immagine {image}: {e}")
         continue
-#    M_delta_prev = M_delta
-#    M_prev_inv = np.linalg.inv(M_prev)
-#    M_delta = np.matmul(M_prev_inv, M[channel['G']]) #Calcolo il delta prima di aggiornare M_prev
-#    if (idx > 1) and predict:
-#        M_earth = expm((logm(M_delta_prev) + logm(M_delta)) / 2) # type: ignore
-#        print(f"✅ Matrice di correzione della rotazione terrestre aggiornata:\n{M_earth}")
-#    else:
-#        M_earth = np.eye(3)
-#    M_prev = M[channel['G']] #Aggiorno M_prev
-#    M[channel['G']] = np.matmul(M_earth, M[channel['G']])  # Composizione delle trasformazioni
-#    print("✅ Correzione della rotazione terrestre applicata.")
-#    print(f"NUova Matrice di trasformazione canale G:\n{M[channel['G']]}")
-#    # Allineamento dell'immagine
-    M_0 = np.linalg.inv(M[channel['G']]).astype(np.float64)
-    try:       
-        M[channel['G']], ecc_success = Alignment.ecc(Processing.alignment_prep(reference), Processing.alignment_prep(bgr[:, :, channel['G']]), np.linalg.inv(M[channel['G']]).astype(np.float64), max_alignment_iterations, alignment_precision)
+    M_prev_inv = np.linalg.inv(M_prev)
+    M_delta = np.matmul(M_prev_inv, M[channel['G']]) #Calcolo il delta prima di aggiornare M_prev
+    if idx > 1:
+        earth_accumulator += logm(M_delta)
+        earth_counter += 1
+        M_earth = expm(earth_accumulator / earth_counter) # type: ignore
+        print(f"✅ Matrice di correzione della rotazione terrestre aggiornata:\n{M_earth}")
+    M_prev = M[channel['G']] #Aggiorno M_prev
+    M[channel['G']] = np.matmul(M_earth, M[channel['G']])  # Composizione delle trasformazioni
+    print("✅ Correzione della rotazione terrestre applicata.")
+    print(f"NUova Matrice di trasformazione canale G:\n{M[channel['G']]}")
+    # Allineamento dell'immagine
+    try:
+        M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[:, :, channel['G']], M[channel['G']], max_alignment_iterations, alignment_precision)
         if not ecc_success:
-            predict = False
             print(f"⚠️ Allineamento ECC fallito per l'immagine {image}: Tentativo con SIFT.")
-            M[channel['G']], sift_success = Alignment.sift(Conversion.float_to_uint8(Processing.alignment_prep(reference)), Conversion.float_to_uint8(Processing.alignment_prep(bgr[:, :, channel['G']])))
-            M[channel['G']], ecc_success = Alignment.ecc(Processing.alignment_prep(reference), Processing.alignment_prep(bgr[:, :, channel['G']]), np.linalg.inv(M[channel['G']]).astype(np.float64), max_alignment_iterations, alignment_precision)
-        else:
-            predict = True
-        M[channel['R']], _ = Alignment.ecc(Processing.alignment_prep(reference), Processing.alignment_prep(bgr[:, :, channel['R']]), np.linalg.inv(M[channel['G']]).astype(np.float64), max_alignment_iterations, alignment_precision)
-        M[channel['B']], _ = Alignment.ecc(Processing.alignment_prep(reference), Processing.alignment_prep(bgr[:, :, channel['B']]), np.linalg.inv(M[channel['G']]).astype(np.float64), max_alignment_iterations, alignment_precision)
+            M[channel['G']], sift_success = Alignment.sift(reference, bgr[:, :, channel['G']])
+            M[channel['G']], ecc_success = Alignment.ecc(reference, bgr[:, :, channel['G']], M[channel['G']], max_alignment_iterations, alignment_precision)
+        M[channel['R']], _ = Alignment.ecc(reference, bgr[:, :, channel['R']], M[channel['G']], max_alignment_iterations, alignment_precision)
+        M[channel['B']], _ = Alignment.ecc(reference, bgr[:, :, channel['B']], M[channel['G']], max_alignment_iterations, alignment_precision)
         print("✅ Allineamento ECC completato.")
-
     except Exception as e:
         print(f"❌ Errore nell'allineamento {image}: {e}")
         print("Suggerimento: controlla il formato di input, forse è da cambiare")
@@ -138,6 +131,7 @@ for idx, image in enumerate(images_paths):
     gc.collect()
 ### Ottenimento dell'immagine finale
 final_image = stack.get_final_3channels()
+final_image = Processing.crop_by_percentage(final_image, 10, 10, 10, 10) #Cropping opzionale
 print("\n✅ Stacking completato per tutte le immagini.")
 ### Richardson-Lucy deconvolution (opzionale)
 if use_richardson_lucy:

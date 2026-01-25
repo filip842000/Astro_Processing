@@ -97,15 +97,15 @@ def ecc(target_g: np.ndarray, source_g: np.ndarray, M_init: np.ndarray, max_iter
     # OpenCV ECC richiede una matrice 3x3 per MOTION_HOMOGRAPHY
     M_ecc = M_init.astype(np.float32)
 
-    target_g = cv2.GaussianBlur(target_g, (3, 3), 0)
-    source_g = cv2.GaussianBlur(source_g, (3, 3), 0)
-
-    target_back = cv2.blur(target_g, (25, 25))
-    source_back = cv2.blur(source_g, (25, 25))
-
-    # Sottraiamo il fondo: restano solo le stelle su un nero quasi perfetto
-    target_g = cv2.subtract(target_g, target_back)
-    source_g = cv2.subtract(source_g, source_back)
+#    target_g = cv2.GaussianBlur(target_g, (3, 3), 0)
+#    source_g = cv2.GaussianBlur(source_g, (3, 3), 0)
+#
+#    target_back = cv2.blur(target_g, (25, 25))
+#    source_back = cv2.blur(source_g, (25, 25))
+#
+#    # Sottraiamo il fondo: restano solo le stelle su un nero quasi perfetto
+#    target_g = cv2.subtract(target_g, target_back)
+#    source_g = cv2.subtract(source_g, source_back)
 
     try:
         # 3. Esecuzione dell'algoritmo ECC
@@ -118,7 +118,7 @@ def ecc(target_g: np.ndarray, source_g: np.ndarray, M_init: np.ndarray, max_iter
                                            cast(Any, None)       , # Maschera (non necessaria se le immagini sono pulite)
                                            5                     ) # Numero di livelli della piramide gaussiana (aiuta la convergenza)
         
-        return np.linalg.inv(M_ecc).astype(np.float64), True
+        return M_ecc.astype(np.float64), True
 
     except cv2.error as e:
         # Se l'algoritmo non converge (es. troppe nuvole o mosso eccessivo)
