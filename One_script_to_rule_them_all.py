@@ -27,7 +27,7 @@ import Functions_library.Stacking_functions as Stacking
 ####################################################################################################################################
 
 ### Variables and Parameters
-camera_acquisitions_folder = "C:/Users/filip/Desktop/Sessione_25-12-28/Orion 01/Foto all'ombra" # Cartella contenente le acquisizioni della camera
+camera_acquisitions_folder = "C:\\Users\\filip\\Desktop\\Prova\\Take 5" # Cartella contenente le acquisizioni della camera
 midsave_folder = "C:/Users/filip/Desktop/Sessione_25-12-28/Orion 01/Foto all'ombra/MidSaves"
 input_format = ".dng" # Da usare se si vuole importare un formato nello specifico
 output_format = ".dng" # Formato di output desiderato
@@ -36,18 +36,18 @@ raw_flip = 6 # Correzione orientamento per immagini RAW: 0 = nessuna correzione,
 # output_bit_depth = "uint16" # Profondità di bit di output desiderata: "uint8", "uint16", "float32"
 reference_identifier = 1 # Identificatore dell'immagine di riferimento per l'allineamento (indice nell'array)
 # Cropping paramteres
-crop_top_pc = 100 * (1 - (4700/8000))    # Percentuale da ritagliare dall'alto
-crop_bottom_pc = 100 * (1 - (5500/8000)) # Percentuale da ritagliare dal basso
-crop_left_pc = 100 * (1 - (3600/6000))   # Percentuale da ritagliare da sinistra
-crop_right_pc = 100 * (1 - (4300/6000))  # Percentuale da ritagliare da destra
+crop_top_pc = 100 * (1 - (3800/8000))    # Percentuale da ritagliare dall'alto
+crop_bottom_pc = 100 * (1 - (5600/8000)) # Percentuale da ritagliare dal basso
+crop_left_pc = 100 * (1 - (5600/6000))   # Percentuale da ritagliare da sinistra
+crop_right_pc = 100 * (1 - (1800/6000))  # Percentuale da ritagliare da destra
 # Alignment parameters
 max_alignment_iterations = 100
-alignment_precision = 1e-5
+alignment_precision = 1e-10
 # Drizzle parameters
 upscale_factor = 2
 drizzle_pixel_fraction = 0.8
 # Stacking parameters
-use_richardson_lucy = False
+use_richardson_lucy = True
 rl_iterations = 30
 # Optional: Imposta 'True' per non salvare le immagini intermedie e ottenre solo il risultato finale
 life_in_the_fast_lane = True
@@ -68,7 +68,8 @@ except Exception as e:
     raise e
 
 reference_bgr = Processing.crop_by_percentage(reference_bgr, crop_top_pc, crop_bottom_pc, crop_left_pc, crop_right_pc) #Cropping opzionale
-Import.dng_export(reference_bgr, "Reference_image.dng") #Salvataggio immagine di riferimento
+reference_bgr = Processing.remove_green_cast(reference_bgr) #Rimozione dominante verde
+Import.raw8_export(Conversion.float_to_uint16(reference_bgr), "Reference_image.dng")
 reference = reference_bgr[:, :, 1]  # Canale verde come riferimento
 
 ### Inizializzazione pre-ciclo
@@ -132,6 +133,7 @@ for idx, image in enumerate(images_paths):
 ### Ottenimento dell'immagine finale
 final_image = stack.get_final_3channels()
 final_image = Processing.crop_by_percentage(final_image, 10, 10, 10, 10) #Cropping opzionale
+final_image = Processing.remove_green_cast(final_image) #Rimozione dominante verde
 print("\n✅ Stacking completato per tutte le immagini.")
 ### Richardson-Lucy deconvolution (opzionale)
 if use_richardson_lucy:

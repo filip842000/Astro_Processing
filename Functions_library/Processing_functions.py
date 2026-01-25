@@ -91,3 +91,12 @@ def alignment_prep(image: np.ndarray):
     image = cv2.GaussianBlur(image, (5, 5), 0)
     
     return image
+
+def remove_green_cast(img):
+    # Per ogni pixel, se il verde è maggiore del massimo tra rosso e blu,
+    # lo limitiamo al valore massimo degli altri due.
+    out = img.copy()
+    avg_rb = (out[:,:,0] + out[:,:,2]) / 2
+    mask = out[:,:,1] > avg_rb
+    out[:,:,1][mask] = avg_rb[mask]
+    return out
